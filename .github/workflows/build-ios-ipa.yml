@@ -1,0 +1,62 @@
+name: Build iOS IPA
+
+# Builds the iOS .ipa with RoboVM on a GitHub-hosted macOS runner.
+# macOS runners are free for public repositories, so this costs nothing.
+# The build is ad-hoc signed (robovm.iosSkipSigning) - intended for
+# sideloading tools (AltStore/Sideloadly/SideStore), which re-sign it
+# with your own Apple ID.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-ios-ipa
+  cancel-in-progress: true
+
+jobs:
+  build-ipa:
+    name: Build .ipa (RoboVM)
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Show toolchain versions
+        run: |
+          java -version
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Build IPA (ad-hoc signed)
+        run: ./gradlew :ios:createIPA -Probovm.iosSkipSigning=true --stacktrace
+
+      - name: Collect IPA
+        id: ipa
+        run: |
+          ipa="$(find ios/build -name '*.ipa' -type f | head -n1)"
+          if [ -z "$ipa" ]; then
+            echo "::error::No .ipa file was produced under ios/build"
+            exit 1
+          fi
+          ls -lh "$ipa"
+          echo "path=$ipa" >> "$GITHUB_OUTPUT"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shattered-pixel-dungeon-ios
+          path: ${{ steps.ipa.outputs.path }}
+          if-no-files-found: error
+          retention-days: 30
